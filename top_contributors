@@ -1,0 +1,63 @@
+#!/usr/bin/env python 
+
+import requests
+import datetime
+import json
+import config
+
+# Enter the repository owner and name
+repo_owner = "openstack"
+repo_name = "nova"
+top = 10
+
+# Get the current date and the date one year ago
+now = datetime.datetime.now()
+one_year_ago = now - datetime.timedelta(days=365)
+
+request_header = {}
+request_header["Accept"] = "application/vnd.github+json"
+request_header["Authorization"] = f"Bearer {config.GHE_TOKEN}"
+request_header["X-GitHub-Api-Version"] = "2022-11-28" 
+  
+
+# TODO: Get all the contributors in the past 365 days so that we can count the total lines of code changed in the project
+# TODO: Support back off when rate limited  
+# TODO: Support caching this data 
+# Send a GET request to the GitHub API
+response = requests.get(url=f"https://api.github.com/repos/{repo_owner}/{repo_name}/stats/contributors", 
+                        headers=request_header)
+
+# Get the JSON data from the response
+data = response.json()
+
+# Create a dictionary to store the contributors and their lines of code
+contributors_top = {}
+
+# Loop through the data and extract the contributors and their lines of code
+for contributor in data:
+    contributor_url = contributor['author']['url']
+    lines_of_code_in_365_days = sum(week['a'] + week['d'] for week in contributor['weeks'] if datetime.datetime.fromtimestamp(week['w']) >= one_year_ago)
+    contributors_top[contributor_url] = {
+        "url": contributor_url, 
+        "login": contributor['author']['login'],
+        "lines_of_code_in_365_days": lines_of_code_in_365_days}
+    
+# Sort the contributors by lines of code and get the top 10
+sorted_list = sorted(contributors_top.items(), key=lambda x: x[1]["lines_of_code_in_365_days"], reverse=True)
+print(f"There are {len(sorted_list)} contributors this year")
+
+top_contributors = []
+for sorted_item in sorted_list[:top]:
+    contributor_url = sorted_item[0]
+    contributor = sorted_item[1]
+    # Get the contributor's name
+    contributor_info = requests.get(contributor_url, headers=request_header).json()
+    contributor["full_name"] = contributor_info['name']
+    contributor["company"] = contributor_info['company']
+    top_contributors.append(contributor)
+
+
+# Print the top 10 contributors and their lines of code, full name, and company
+print(f"Top 5 contributors to", repo_name, "in the past year (in order 1 - {top}):")
+for contributor in top_contributors:
+    print(json.dumps(contributor, indent=2))
